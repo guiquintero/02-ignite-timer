@@ -46,6 +46,7 @@ const BaseInput = styled.input`
 
   &::placeholder{
     color: ${props=>props.theme.gray_500};
+    font-size: 1rem;
   }
 `;
 
