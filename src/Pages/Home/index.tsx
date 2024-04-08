@@ -1,7 +1,8 @@
-import { Play } from "phosphor-react";
-import { set, useForm } from "react-hook-form";
+import { HandPalm, Play } from "phosphor-react";
+import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as zod from "zod";
+import { differenceInSeconds } from "date-fns";
 
 import {
   CountdownContainer,
@@ -10,9 +11,10 @@ import {
   MinutsAmountInput,
   Separator,
   StartCountdownButton,
+  StopCountdownButton,
   TaskInput,
 } from "./styles";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const newCycleFormValidationShema = zod.object({
   task: zod.string().min(1, "Informe o nome da tarefa"),
@@ -33,38 +35,101 @@ interface Cycle {
   id: string;
   task: string;
   minutsAmount: number;
+  startDate: Date;
+  interruptedDate?: Date;
+  finishedDate?: Date;
 }
 
 export function Home() {
   const [cycles, setCyles] = useState<Cycle[]>([]);
 
-  const[activeCycleId, setActiveCycleId] = useState<string | null>(null);
+  const [activeCycleId, setActiveCycleId] = useState<string | null>(null);
 
-  const[amountSecondsPassed, setAmountSecondsPassed] = useState(0);
+  const [amountSecondsPassed, setAmountSecondsPassed] = useState(0);
 
-  const { register, handleSubmit, watch, reset /*formState*/ } = useForm<NewCycleFormData>({
-    resolver: zodResolver(newCycleFormValidationShema),
-    defaultValues: {
-      task: "",
-      minutsAmount: 0,
+  const { register, handleSubmit, watch, reset /*formState*/ } =
+    useForm<NewCycleFormData>({
+      resolver: zodResolver(newCycleFormValidationShema),
+      defaultValues: {
+        task: "",
+        minutsAmount: 0,
+      },
+    });
+
+  const activeCycle = cycles.find((cycle) => cycle.id === activeCycleId);
+
+  const totalSeconds = activeCycle ? activeCycle.minutsAmount * 60 : 0;
+
+  useEffect(() => {
+    let interval: number;
+
+    if (activeCycle) {
+      interval = setInterval(() => {
+        const differece = differenceInSeconds(
+          new Date(),
+          activeCycle.startDate
+        );
+        if (differece >= totalSeconds) {
+          setCyles((state) =>
+            state.map((cycle) => {
+              if (cycle.id === activeCycleId) {
+                return {
+                  ...cycle,
+                  finishedDate: new Date(),
+                };
+              } else {
+                return cycle;
+              }
+            })
+          );
+          setAmountSecondsPassed(totalSeconds)
+
+          clearInterval(interval);
+        } else {
+          setAmountSecondsPassed(differece);
+        }
+      }, 1000);
     }
-  });
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [activeCycle, activeCycleId]);
 
   function handleCreatNewCycle(data: NewCycleFormData) {
     const newCycle: Cycle = {
       id: String(new Date().getTime()),
       task: data.task,
       minutsAmount: data.minutsAmount,
+      startDate: new Date(),
     };
 
-    setCyles((state)=>[...state, newCycle]);
+    setCyles((state) => [...state, newCycle]);
     setActiveCycleId(newCycle.id);
+    setAmountSecondsPassed(0);
+
     reset();
   }
 
-  const activeCycle = cycles.find((cycle) => cycle.id === activeCycleId);
+  function handleInterruptCycle() {
+    setCyles((state) =>
+      state.map((cycle) => {
+        if (cycle.id === activeCycleId) {
+          return {
+            ...cycle,
+            interruptedDate: new Date(),
+          };
+        } else {
+          return cycle;
+        }
+      }),
+    );
 
-  const totalSeconds = activeCycle ? activeCycle.minutsAmount * 60 : 0;
+    setActiveCycleId(null);
+
+    document.title = `Ignite Timer`;
+  }
+
   const currentSeconds = activeCycle ? totalSeconds - amountSecondsPassed : 0;
 
   const minutesAmount = Math.floor(currentSeconds / 60);
@@ -75,8 +140,17 @@ export function Home() {
 
   //console.log(formState.errors);
 
+  useEffect(() => {
+    if (activeCycle) {
+      document.title = `${minutes}:${seconds} | Pomodoro`;
+      return;
+    }
+  }, [minutes, seconds]);
+
   const task = watch("task");
   const isSubmitDisabled = !task;
+
+  console.log(cycles);
 
   return (
     <HomeContainer>
@@ -88,6 +162,7 @@ export function Home() {
             id="task"
             placeholder="De um nome para seu projeto"
             list="task_suggestions"
+            disabled={!!activeCycle}
             {...register("task")}
           />
 
@@ -105,6 +180,7 @@ export function Home() {
             step={5}
             min={5}
             max={60}
+            disabled={!!activeCycle}
             {...register("minutsAmount", { valueAsNumber: true })}
           />
 
@@ -119,10 +195,17 @@ export function Home() {
           <span>{seconds[1]}</span>
         </CountdownContainer>
 
-        <StartCountdownButton type="submit" disabled={isSubmitDisabled}>
-          <Play size={24} />
-          Começar
-        </StartCountdownButton>
+        {activeCycle ? (
+          <StopCountdownButton onClick={handleInterruptCycle} type="button">
+            <HandPalm size={24} />
+            Interromper
+          </StopCountdownButton>
+        ) : (
+          <StartCountdownButton type="submit" disabled={isSubmitDisabled}>
+            <Play size={24} />
+            Começar
+          </StartCountdownButton>
+        )}
       </form>
     </HomeContainer>
   );
